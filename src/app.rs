@@ -4,7 +4,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, self};
 use crossterm::{event, execute};
 
-use crate::renderer::Renderer;
+use crate::renderer::{Renderer, self};
 use crate::ui::flex::{Flex, FlexDirection, FlexSize};
 use crate::ui::node::{ContainerNode, Node};
 
@@ -12,7 +12,8 @@ use crate::ui::node::{ContainerNode, Node};
 pub struct App {
     renderer: Renderer,
     ui_root: Box<dyn ContainerNode>,
-    running: bool
+    running: bool,
+    term_size: (u16, u16)
 }
 
 impl Drop for App {
@@ -51,10 +52,13 @@ impl App {
 
         ui_root.set_size(renderer.get_size());
 
+        let term_size = renderer.get_size();
+
         App {
             renderer,
             ui_root,
-            running: false
+            running: false,
+            term_size
         }
     }
 
@@ -69,33 +73,35 @@ impl App {
         self.renderer.clear();
         self.ui_root.draw(&mut self.renderer);
     }
+    
+    fn update_term_size(&mut self) -> bool {
+        let term_size = self.renderer.get_size();
+
+        if self.term_size != term_size {
+            self.term_size = term_size;
+
+            return true;
+        }
+
+        false
+    }
 
     fn start_loop (&mut self) {
         self.running = true;
 
         while self.running {
             self.process_event();
+
+            if self.update_term_size() {
+                self.draw();
+            }
         }
     }
 
     fn process_event(&mut self) {
         if event::poll(Duration::from_millis(100)).unwrap() {
-            self.process_resize_event();
-            self.process_focus_event();
             self.process_key_event();
         } 
-    }
-
-    fn process_focus_event(&mut self) {
-        if let Ok(Event::FocusGained) = event::read() { 
-            self.draw();
-        }
-    }
-
-    fn process_resize_event(&mut self) {
-        if let Ok(Event::Resize(_width, _height)) = event::read() { 
-            self.draw();
-        }
     }
 
     fn process_key_event(&mut self) {
