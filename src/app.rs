@@ -5,10 +5,14 @@ use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, self};
 use crossterm::{event, execute};
 
 use crate::renderer::Renderer;
+use crate::ui::flex::{Flex, FlexDirection, FlexSize};
+use crate::ui::node::{ContainerNode, Node};
 
 
 pub struct App {
-    renderer: Renderer
+    renderer: Renderer,
+    ui_root: Box<dyn ContainerNode>,
+    running: bool
 }
 
 impl Drop for App {
@@ -19,62 +23,97 @@ impl Drop for App {
 
 impl App {
     pub fn new() -> Self {
+        let renderer = Renderer::new();
+        let mut ui_root = Box::new(Flex::new());
+
+        let child0 = Box::new(Flex::new());
+        let mut child1 = Box::new(Flex::new());
+
+        let child2 = Box::new(Flex::new());
+        let child3 = Box::new(Flex::new());
+        let mut child4 = Box::new(Flex::new());
+
+        let child5 = Box::new(Flex::new());
+        let child6 = Box::new(Flex::new());
+
+        child4.add_child(child5, FlexSize::Grow);
+        child4.add_child(child6, FlexSize::Grow);
+        child4.set_direction(FlexDirection::Column);
+
+        child1.add_child(child2, FlexSize::Exact(10));
+        child1.add_child(child3, FlexSize::Grow);
+        child1.add_child(child4, FlexSize::Grow);
+
+        ui_root.add_child(child0, FlexSize::Exact(1));
+        ui_root.add_child(child1, FlexSize::Grow);
+
+        ui_root.set_direction(FlexDirection::Column);
+
+        ui_root.set_size(renderer.get_size());
+
         App {
-            renderer: Renderer::new()
+            renderer,
+            ui_root,
+            running: false
         }
     }
 
     pub fn start (&mut self) {
         self.setup_term();
+        self.draw();
         self.start_loop();
     }
 
     fn draw(&mut self) {
-        let (w, h) = self.renderer.get_size();
+        self.ui_root.set_size(self.renderer.get_size());
         self.renderer.clear();
-        self.renderer.draw_box(0, 0, w, h);
+        self.ui_root.draw(&mut self.renderer);
     }
 
     fn start_loop (&mut self) {
-        loop {
-            if event::poll(Duration::from_millis(500)).unwrap() {
-                match event::read() {
-                    Ok(Event::Resize(w, h)) => self.draw(),
-                    _ => continue
-                }
+        self.running = true;
 
-                // if let Ok(Event::Key(event)) = event::read() { 
-                //     match event {
-                //         KeyEvent {
-                //             code: KeyCode::Char('q'),
-                //             kind: KeyEventKind::Press,
-                //             ..
-                //         } => break,
-                        // KeyEvent {
-                        //     code: KeyCode::Up,
-                        //     kind: KeyEventKind::Press,
-                        //     ..
-                        // } => h += 1,
-                        // KeyEvent {
-                        //     code: KeyCode::Right,
-                        //     kind: KeyEventKind::Press,
-                        //     ..
-                        // } => w += 1,
-                        // KeyEvent {
-                        //     code: KeyCode::Down,
-                        //     kind: KeyEventKind::Press,
-                        //     ..
-                        // } => h -= 1,
-                        // KeyEvent {
-                        //     code: KeyCode::Left,
-                        //     kind: KeyEventKind::Press,
-                        //     ..
-                        // } => w -= 1,
-                        // _ => continue
-                    // }
-                // };
-            } 
+        while self.running {
+            self.process_event();
         }
+    }
+
+    fn process_event(&mut self) {
+        if event::poll(Duration::from_millis(100)).unwrap() {
+            self.process_resize_event();
+            self.process_focus_event();
+            self.process_key_event();
+        } 
+    }
+
+    fn process_focus_event(&mut self) {
+        if let Ok(Event::FocusGained) = event::read() { 
+            self.draw();
+        }
+    }
+
+    fn process_resize_event(&mut self) {
+        if let Ok(Event::Resize(_width, _height)) = event::read() { 
+            self.draw();
+        }
+    }
+
+    fn process_key_event(&mut self) {
+        if let Ok(Event::Key(event)) = event::read() { 
+            match event {
+                KeyEvent {
+                    code: KeyCode::Char('q'),
+                    kind: KeyEventKind::Press,
+                    ..
+                } => self.running = false,
+                KeyEvent {
+                    code: KeyCode::Char('r'),
+                    kind: KeyEventKind::Press,
+                    ..
+                } => self.draw(),
+                _ => ()
+            }
+        };
     }
 
     fn setup_term (&mut self) {
