@@ -1,13 +1,12 @@
-use std::{io::stdout, collections::HashMap};
+use std::{io::{stdout, Stdout, BufWriter, Write}, collections::HashMap};
 
 use crossterm::{
     terminal::{
-        Clear,
-        ClearType, self
+        self
     },
     cursor::MoveTo, 
     style::Print,
-    execute, 
+    queue, 
 };
 
 struct BoxChar {
@@ -62,21 +61,49 @@ impl PartialEq for CharCouple {
 }
 
 pub struct Renderer {
-    box_chars: HashMap<(u16, u16), usize>
+    box_chars: HashMap<(u16, u16), usize>,
+    offscreen_buf: Vec<Vec<char>>,
+    stdout_buf: BufWriter<Stdout>,
 }
 
 impl Renderer {
     pub fn new() -> Self {
         Renderer {
-            box_chars: HashMap::new()
+            offscreen_buf: Vec::new(),
+            stdout_buf: BufWriter::with_capacity(u16::MAX as usize, stdout()),
+            box_chars: HashMap::new(),
         }
+    }
+
+    pub fn get_stdout_buf(&mut self) -> &mut BufWriter<Stdout> {
+        &mut self.stdout_buf
+    }
+
+    pub fn refresh(&mut self) {
+        for line in 0..self.offscreen_buf.len() {
+            queue!(self.stdout_buf, MoveTo(0, line as u16))
+                .expect("Could not move cursor");
+
+            for c in self.offscreen_buf[line].iter() {
+                queue!(self.stdout_buf, Print(c))
+                    .expect("Could not move cursor");
+            }
+        }
+
+        self.stdout_buf.flush().unwrap();
     }
 
     pub fn clear (&mut self) {
         self.box_chars.clear();
 
-        execute!(stdout(), Clear(ClearType::All))
-            .expect("Cound not clear");
+        let (width, height) = self.get_size();
+
+        self.offscreen_buf.resize(height as usize, Vec::new());
+
+        for line in self.offscreen_buf.iter_mut() {
+            line.resize(width as usize, ' ');
+            line.fill(' ');
+        }
     }
 
     pub fn get_size (&self) -> (u16, u16) {
@@ -85,11 +112,18 @@ impl Renderer {
     }
 
     pub fn draw_char_at (&mut self, x: u16, y: u16, c: char) {
-        execute!(stdout(), MoveTo(x, y))
-            .expect("Could not move cursor");
+        let x = x as usize;
+        let y = y as usize;
 
-        execute!(stdout(), Print(c))
-            .expect("Could not move cursor");
+        let offscreen_height = self.offscreen_buf.len();
+        let offscreen_width: usize = match self.offscreen_buf.get(0) {
+            None => 0,
+            Some(val) => val.len()
+        };
+
+        if x < offscreen_width && y < offscreen_height {
+            self.offscreen_buf[y][x] = c;
+        }
     }
 
     pub fn draw_h_line(&mut self, x_start: u16, x_end: u16, y: u16) {
@@ -105,16 +139,20 @@ impl Renderer {
     }
 
     pub fn draw_box (&mut self, x: u16, y: u16, w: u16, h: u16) {
-        self.draw_v_line(y+1, y+h, x);
-        self.draw_v_line(y+1, y+h, x+w+1);
+        if w < 1 || h < 1 {
+            return
+        }
 
-        self.draw_h_line(x+1, x+w, y);
-        self.draw_h_line(x+1, x+w, y+h+1);
+        self.draw_v_line(y+1, y+h-2, x);
+        self.draw_v_line(y+1, y+h-2, x+w-1);
+
+        self.draw_h_line(x+1, x+w-2, y);
+        self.draw_h_line(x+1, x+w-2, y+h-1);
 
         self.draw_box_char_at(x, y, BOX_TL);
-        self.draw_box_char_at(x+w+1, y, BOX_TR);
-        self.draw_box_char_at(x, y+h+1, BOX_BL);
-        self.draw_box_char_at(x+w+1, y+h+1, BOX_BR);
+        self.draw_box_char_at(x+w-1, y, BOX_TR);
+        self.draw_box_char_at(x, y+h-1, BOX_BL);
+        self.draw_box_char_at(x+w-1, y+h-1, BOX_BR);
 
     }
 

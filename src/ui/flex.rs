@@ -1,140 +1,165 @@
-use crate::renderer::{Renderer};
+use std::{rc::Rc, cell::RefCell, slice::{Iter, IterMut}};
 
-use super::{node::{ContainerNode, Node}};
+use crate::renderer::Renderer;
 
-#[derive(PartialEq)]
-pub enum FlexDirection {
-    Row,
-    Column
+use super::{Node};
+
+pub enum FlexType {
+    Flex(u16),
+    None
 }
 
-pub enum FlexSize {
-    Exact(u16),
-    Grow
+pub enum FlexDirection {
+    Row, Column
 }
 
 pub struct Flex {
-    children: Vec<Box<dyn Node>>,
-    direction: FlexDirection,
-    layout: Vec<FlexSize>,
+    children: Vec<Rc<RefCell<dyn Node>>>,
+    flex_direction: FlexDirection,
+    flexes: Vec<FlexType>,
     size: (u16, u16),
-    pos: (u16, u16)
+    pos: (u16, u16),
 }
 
 impl Node for Flex {
-    fn draw(&mut self, renderer: &mut Renderer) {
+    fn draw(&mut self, renderer: &mut Renderer, parent: Option<(u16, u16)>) {
+        let (offset_x, offset_y) = match parent {
+            None => (0, 0),
+            Some(val) => val
+        };
+
+        let (w, h) = self.size;
+        let (x, y) = (self.pos.0 + offset_x, self.pos.1 + offset_y);
+
         self.update_layout();
-        self.draw_children(renderer);
 
-        let (x, y) = self.pos;
-        let (width, height) = self.size;
+        for child in self.children.iter_mut() {
+            child.borrow_mut().draw(renderer, Some((x, y)));
+        }
 
-        renderer.draw_box(x, y, width, height);
+        renderer.draw_box(x, y, w, h);
     }
 
-    fn get_size(&self) -> (u16, u16) {
-        self.size
+    fn children(&self) -> Option<Iter<Rc<RefCell<dyn Node>>>> {
+        Some(self.children.iter())
+    }
+
+    fn children_mut(&mut self) -> Option<IterMut<Rc<RefCell<dyn Node>>>> {
+        Some(self.children.iter_mut())
+    }
+
+    fn add_child(&mut self, child: Rc<RefCell<dyn Node>>) {
+        self.children.push(child);
+        self.flexes.push(FlexType::None);
     }
 
     fn set_size(&mut self, size: (u16, u16)) {
         self.size = size;
     }
 
-    fn get_pos(&self) -> (u16, u16) {
-        self.pos
+    fn get_size(&self) -> (u16, u16) {
+        self.size
     }
 
     fn set_pos(&mut self, pos: (u16, u16)) {
         self.pos = pos;
     }
+
+    fn get_pos(&self) -> (u16, u16) {
+        self.pos
+    }
 }
 
-impl ContainerNode for Flex {
-    fn get_children(&self) -> &Vec<Box<dyn super::node::Node>> {
-        &self.children
-    }
-} 
-
 impl Flex {
-    pub fn new() -> Self {
-        Flex {
+    pub fn new() -> Rc<RefCell<Flex>> {
+        let flex = Flex {
+            flex_direction: FlexDirection::Row,
             children: Vec::new(),
-            direction: FlexDirection::Row,
-            layout: Vec::new(),
+            flexes: Vec::new(),
             size: (0, 0),
-            pos: (0, 0)
-        }
+            pos: (0, 0),
+        };
+
+        Rc::new(RefCell::new(flex))
     }
 
-    pub fn add_child(&mut self, node: Box<dyn Node>, size: FlexSize) {
-        self.children.push(node);
-        self.layout.push(size);
+    pub fn add_child_flex(&mut self, child: Rc<RefCell<dyn Node>>, flex_type: FlexType) {
+        self.add_child(child);
+        let last_index = self.flexes.len() - 1;
+        self.flexes[last_index] = flex_type;
     }
 
-    pub fn set_direction(&mut self, direction: FlexDirection) {
-        self.direction = direction;
-    }
-
-    fn draw_children(&mut self, renderer: &mut Renderer) {
-        for i in 0..self.children.len() {
-            let child = self.children.get_mut(i)
-                .expect("Could not get child");
-
-            child.draw(renderer);
-        }
+    pub fn set_flex_direction(&mut self, flex_direction: FlexDirection) {
+        self.flex_direction = flex_direction; 
     }
 
     fn update_layout(&mut self) {
-        let (width, height) = self.size;
-        let (x, y) = self.pos;
-        let layout_len = self.layout.len();
+        let full_size = match self.flex_direction {
+            FlexDirection::Row => self.get_size().0,
+            FlexDirection::Column => self.get_size().1
+        };
 
-        if layout_len > 0 {
-            let mut grow_count = 0;
-            let mut exact_count = 0;
+        let mut flex_total = 0;
+        let mut none_total = 0;
 
-            for flex_size in &self.layout {
-                match flex_size {
-                    FlexSize::Exact(val) => exact_count += val,
-                    FlexSize::Grow => grow_count += 1
+
+        for i in 0..self.children.len() {
+            let flex = &self.flexes[i];
+            let child = self.children[i].borrow();
+
+            match flex {
+                FlexType::None => none_total += match self.flex_direction {
+                    FlexDirection::Row => child.get_size().0,
+                    FlexDirection::Column => child.get_size().1
+                },
+                FlexType::Flex(val) => {
+                    flex_total += val;
+                }
+            }
+        }
+
+        let flex_space = full_size - none_total + self.children.len() as u16 - 1 * !self.children.is_empty() as u16;
+
+        let (flex_scale, mut flex_rem) = if flex_total != 0 {
+            ( flex_space / flex_total,
+              flex_space % flex_total )
+        } else {
+            (0, 0)
+        };
+
+        let mut current_pos = 0;
+        for i in 0..self.children.len() {
+            let flex = &self.flexes[i];
+            let (child_width, child_height) = self.children[i].borrow().get_size();
+            let (child_x, child_y) = self.children[i].borrow().get_pos();
+
+            let mut child = self.children[i].borrow_mut();
+
+            let mut size: u16 = match self.flex_direction {
+                FlexDirection::Row => child_width,
+                FlexDirection::Column => child_height
+            };
+
+            if let FlexType::Flex(val) = flex {
+                size = (flex_scale * val) as u16;
+
+                if flex_rem > 0 {
+                    size += 1;
+                    flex_rem -= 1;
+                }
+
+                match self.flex_direction {
+                    FlexDirection::Row => child.set_size((size, self.get_size().1)),
+                    FlexDirection::Column => child.set_size((self.get_size().0, size))
                 }
             }
 
-            let max_size = if self.direction == FlexDirection::Row {
-                self.size.0 
-            } else {
-                self.size.1
-            };
-
-            let grow_size = (max_size - exact_count - (layout_len as u16) + 1) / grow_count;
-
-            let len = if self.children.len() < layout_len {
-                self.children.len()
-            } else {
-                layout_len
-            };
-
-            let mut offset: u16 = 0;
-
-            for i in 0..len {
-                let child = self.children.get_mut(i).unwrap();
-                let flex_size = self.layout.get(i).unwrap();
-
-                let size = match flex_size {
-                    FlexSize::Exact(val) => *val,
-                    FlexSize::Grow => grow_size
-                };
-
-                if self.direction == FlexDirection::Row {
-                    child.set_size((size, height));
-                    child.set_pos((x + offset, y));
-                } else {
-                    child.set_size((width, size));
-                    child.set_pos((x, y + offset));
-                }
-
-                offset += size + 1;
+            match self.flex_direction {
+                FlexDirection::Row => child.set_pos((current_pos, child_y)),
+                FlexDirection::Column => child.set_pos((child_x, current_pos))
             }
+
+            current_pos += size - (size > 1) as u16 * 1;
         }
     }
 }
