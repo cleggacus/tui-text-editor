@@ -8,16 +8,18 @@ use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, self};
 use crossterm::{event, queue};
 
 use crate::renderer::{Renderer};
-use crate::ui::{Node};
-use crate::ui::flex::{Flex, FlexType, FlexDirection};
-use crate::ui::label::Label;
+use crate::tui::drawer::Drawer;
+use crate::tui::node::Node;
+use crate::tui::style::Style;
+use crate::tui::style::border::Border;
+use crate::tui::style::position::{Position2D, Position};
+use crate::tui::style::size::{Size2D, Size};
 
 const FPS: u64 = 60;
 
 pub struct App {
-    root_ui: Rc<RefCell<dyn Node>>,
-    fps_label: Rc<RefCell<Label>>,
-    renderer: Renderer,
+    root_ui: Node,
+    renderer: Rc<RefCell<Renderer>>,
     term_size: (u16, u16),
     running: bool,
     last: Instant
@@ -31,52 +33,41 @@ impl Drop for App {
 
 impl App {
     pub fn new() -> Self {
-        let renderer = Renderer::new();
-        let term_size = renderer.get_size();
+        let renderer = Rc::new(RefCell::new(Renderer::new()));
+        let boundaries = renderer.borrow().boundaries();
+        let term_size = ( boundaries.width, boundaries.height );
 
-        let root_ui = Flex::new();
-        root_ui.borrow_mut().set_flex_direction(FlexDirection::Column);
+        let child_style = *Style::default()
+            .set_position(Position2D(
+                Position::Auto,
+                Position::Exact(0)
+            ))
+            .set_size(Size2D(
+                Size::Percent(50.0), 
+                Size::Percent(100.0)
+            ))
+            .set_border(Border::Line);
 
-        let flex_0 = Flex::new();
-        flex_0.borrow_mut().set_size((0, 3));
+        let mut root_ui = Node::default();
 
-        let flex_1 = Flex::new();
+        root_ui.get_style()
+            .set_size(Size2D(
+                Size::Percent(100.0), 
+                Size::Percent(100.0)
+            ));
 
-        let flex_1_0 = Flex::new();
-        flex_1_0.borrow_mut().set_size((5, 0));
+        let child_0 = Rc::new(RefCell::new(Node::default()));
+        let child_1 = Rc::new(RefCell::new(Node::default()));
 
-        let flex_1_1 = Flex::new();
-        let flex_1_2 = Flex::new();
-        flex_1_2.borrow_mut().set_flex_direction(FlexDirection::Column);
+        child_0.borrow_mut().set_style(child_style);
+        child_1.borrow_mut().set_style(child_style);
 
-        let flex_1_2_0 = Flex::new();
-        let flex_1_2_1 = Flex::new();
-        let flex_1_2_2 = Flex::new();
-        let flex_1_2_3 = Flex::new();
-        let flex_1_2_4 = Flex::new();
-
-        let fps_label = Label::new();
-        fps_label.borrow_mut().set_pos((1, 1));
-
-        flex_1_2.borrow_mut().add_child_flex(flex_1_2_0, FlexType::Flex(1));
-        flex_1_2.borrow_mut().add_child_flex(flex_1_2_1, FlexType::Flex(1));
-        flex_1_2.borrow_mut().add_child_flex(flex_1_2_2, FlexType::Flex(1));
-        flex_1_2.borrow_mut().add_child_flex(flex_1_2_3, FlexType::Flex(1));
-        flex_1_2.borrow_mut().add_child_flex(flex_1_2_4, FlexType::Flex(1));
-
-        let label_clone = Rc::clone(&fps_label);
-        flex_0.borrow_mut().add_child(label_clone);
-
-        flex_1.borrow_mut().add_child_flex(flex_1_0, FlexType::None);
-        flex_1.borrow_mut().add_child_flex(flex_1_1, FlexType::Flex(2));
-        flex_1.borrow_mut().add_child_flex(flex_1_2, FlexType::Flex(1));
-
-        root_ui.borrow_mut().add_child_flex(flex_0, FlexType::None);
-        root_ui.borrow_mut().add_child_flex(flex_1, FlexType::Flex(1));
+        root_ui
+            .add_child(child_0)
+            .add_child(child_1);
 
         App {
             root_ui,
-            fps_label: Rc::clone(&fps_label),
             renderer,
             term_size,
             running: false,
@@ -91,20 +82,13 @@ impl App {
     }
 
     fn draw(&mut self) {
-        self.renderer.clear();
-
-        let fps = 1_000_000_000 / self.last.elapsed().as_nanos();
-        let fps_string = format!(" FPS: {}", fps);
-        self.fps_label.borrow_mut().set_text(fps_string.as_str());
-
-        let mut root_ui = self.root_ui.borrow_mut();
-
-        root_ui.set_size(self.renderer.get_size());
-        root_ui.draw(&mut self.renderer, None);
+        self.renderer.borrow_mut().clear();
+        self.root_ui.draw_root(self.renderer.clone());
     }
     
     fn update_term_size(&mut self) -> bool {
-        let term_size = self.renderer.get_size();
+        let boundaries = self.renderer.borrow().boundaries();
+        let term_size = ( boundaries.width, boundaries.height );
 
         if self.term_size != term_size {
             self.term_size = term_size;
@@ -125,7 +109,7 @@ impl App {
             }
 
             self.draw();
-            self.renderer.refresh();
+            self.renderer.borrow_mut().refresh();
 
             self.last = Instant::now();
         }
@@ -157,7 +141,7 @@ impl App {
     }
 
     fn setup_term (&mut self) {
-        queue!(self.renderer.get_stdout_buf(), EnterAlternateScreen)
+        queue!(self.renderer.borrow_mut().get_stdout_buf(), EnterAlternateScreen)
             .expect("Could not enter alternate screen");
 
         terminal::enable_raw_mode()
@@ -168,7 +152,7 @@ impl App {
         terminal::disable_raw_mode()
             .expect("Could not disable raw mode");
 
-        queue!(self.renderer.get_stdout_buf(), LeaveAlternateScreen)
+        queue!(self.renderer.borrow_mut().get_stdout_buf(), LeaveAlternateScreen)
             .expect("Could not leave alternate screen");
     }
 }

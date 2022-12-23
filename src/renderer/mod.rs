@@ -29,7 +29,12 @@ const BOX_CL: BoxChar = BoxChar { c: '├', i: BOX_RIGHT | BOX_TOP | BOX_BOTTOM 
 const BOX_CR: BoxChar = BoxChar { c: '┤', i: BOX_LEFT | BOX_TOP | BOX_BOTTOM };
 const BOX_CT: BoxChar = BoxChar { c: '┬', i: BOX_LEFT | BOX_RIGHT | BOX_BOTTOM };
 const BOX_CB: BoxChar = BoxChar { c: '┴', i: BOX_LEFT | BOX_RIGHT | BOX_TOP };
-const BOX_C: BoxChar = BoxChar { c: '┴', i: BOX_LEFT | BOX_RIGHT | BOX_TOP | BOX_BOTTOM };
+const BOX_C: BoxChar = BoxChar { c: '┼', i: BOX_LEFT | BOX_RIGHT | BOX_TOP | BOX_BOTTOM };
+
+const BOX_TL_CURVE: BoxChar = BoxChar { c: '╭', i: BOX_RIGHT | BOX_BOTTOM };
+const BOX_TR_CURVE: BoxChar = BoxChar { c: '╮', i: BOX_LEFT | BOX_BOTTOM };
+const BOX_BL_CURVE: BoxChar = BoxChar { c: '╰', i: BOX_RIGHT | BOX_TOP };
+const BOX_BR_CURVE: BoxChar = BoxChar { c: '╯', i: BOX_LEFT | BOX_TOP };
 
 const BOX_CHARS: [char; 16] = create_box_chars_arr();
 
@@ -38,10 +43,10 @@ const fn create_box_chars_arr () -> [char; 16] {
 
     char_arr[BOX_V.i] = BOX_V.c;
     char_arr[BOX_H.i] = BOX_H.c;
-    char_arr[BOX_TL.i] = BOX_TL.c;
-    char_arr[BOX_TR.i] = BOX_TR.c;
-    char_arr[BOX_BL.i] = BOX_BL.c;
-    char_arr[BOX_BR.i] = BOX_BR.c;
+    char_arr[BOX_TL.i] = BOX_TL_CURVE.c;
+    char_arr[BOX_TR.i] = BOX_TR_CURVE.c;
+    char_arr[BOX_BL.i] = BOX_BL_CURVE.c;
+    char_arr[BOX_BR.i] = BOX_BR_CURVE.c;
     char_arr[BOX_CL.i] = BOX_CL.c;
     char_arr[BOX_CR.i] = BOX_CR.c;
     char_arr[BOX_CT.i] = BOX_CT.c;
@@ -60,6 +65,15 @@ impl PartialEq for CharCouple {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct Rect {
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+    pub height: u16,
+}
+
+#[derive(Debug)]
 pub struct Renderer {
     box_chars: HashMap<(u16, u16), usize>,
     offscreen_buf: Vec<Vec<char>>,
@@ -96,7 +110,9 @@ impl Renderer {
     pub fn clear (&mut self) {
         self.box_chars.clear();
 
-        let (width, height) = self.get_size();
+        let boundaries = self.boundaries();
+        let width = boundaries.width;
+        let height = boundaries.height;
 
         self.offscreen_buf.resize(height as usize, Vec::new());
 
@@ -106,9 +122,16 @@ impl Renderer {
         }
     }
 
-    pub fn get_size (&self) -> (u16, u16) {
-        terminal::size()
-            .expect("Could not get size")
+    pub fn boundaries (&self) -> Rect {
+        let (width, height) = terminal::size()
+            .expect("Could not get size");
+
+        Rect {
+            x: 0,
+            y: 0,
+            width,
+            height
+        }
     }
 
     pub fn draw_char_at (&mut self, x: u16, y: u16, c: char) {
@@ -138,7 +161,12 @@ impl Renderer {
         }
     }
 
-    pub fn draw_box (&mut self, x: u16, y: u16, w: u16, h: u16) {
+    pub fn draw_box (&mut self, rect: Rect) {
+        let x = rect.x;
+        let y = rect.y;
+        let w = rect.width;
+        let h = rect.height;
+
         if w < 1 || h < 1 {
             return
         }
