@@ -8,10 +8,11 @@ use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, self};
 use crossterm::{event, queue};
 
 use crate::renderer::{Renderer};
-use crate::tui::drawer::Drawer;
 use crate::tui::node::Node;
 use crate::tui::style::Style;
 use crate::tui::style::border::Border;
+use crate::tui::style::display::{Display, FlexDirection};
+use crate::tui::style::flex::Flex;
 use crate::tui::style::position::{Position2D, Position};
 use crate::tui::style::size::{Size2D, Size};
 
@@ -38,23 +39,23 @@ impl App {
         let term_size = ( boundaries.width, boundaries.height );
 
         let child_style = *Style::default()
-            .set_position(Position2D(
-                Position::Auto,
-                Position::Exact(0)
-            ))
             .set_size(Size2D(
-                Size::Percent(50.0), 
-                Size::Percent(100.0)
+                Size::Auto, 
+                Size::Percent(50.0)
             ))
+            .set_flex(Flex::Value(1.0))
             .set_border(Border::Line);
 
         let mut root_ui = Node::default();
 
         root_ui.get_style()
+            .set_display(Display::Flex(FlexDirection::Row))
             .set_size(Size2D(
                 Size::Percent(100.0), 
                 Size::Percent(100.0)
-            ));
+            ))
+            .set_border(Border::Line)
+            .set_flex_border(Border::Line);
 
         let child_0 = Rc::new(RefCell::new(Node::default()));
         let child_1 = Rc::new(RefCell::new(Node::default()));

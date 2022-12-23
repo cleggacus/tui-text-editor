@@ -1,4 +1,4 @@
-use super::{style::{border::Border, Style, size::{Size2D, Size}, position::{Position2D, Position}, display::Display}};
+use super::{style::{border::{Border}, Style, size::{Size2D, Size}, position::{Position2D, Position}, display::{Display, FlexDirection}, flex::Flex}};
 
 use std::{rc::Rc, cell::{RefCell}};
 
@@ -31,7 +31,7 @@ impl Drawer {
 
         self.current_position = (
             boundaries.x + boundaries.width,
-            boundaries.y + boundaries.height,
+            boundaries.y + boundaries.height
         );
     }
 
@@ -78,17 +78,17 @@ impl Drawer {
         let Size2D (_, style_height) = style.get_size();
         let height = self.boundaries.height;
 
-        self.calc_onscreen_size(style_height, height)
+        Drawer::calc_onscreen_size(style_height, height)
     }
 
     fn calc_onscreen_width(&mut self, style: &Style) -> u16 {
         let Size2D (style_width, _) = style.get_size();
         let width = self.boundaries.width;
 
-        self.calc_onscreen_size(style_width, width)
+        Drawer::calc_onscreen_size(style_width, width)
     }
 
-    fn calc_onscreen_size(&self, style_size: Size, boundary_size: u16) -> u16 {
+    pub fn calc_onscreen_size(style_size: Size, boundary_size: u16) -> u16 {
         match style_size {
             Size::Auto => 0,
             Size::Exact(val) => val,
@@ -133,6 +133,24 @@ impl Drawer {
                 let val = val * 0.01 * boundary_size as f64;
                 val as u16
             }
+        }
+    }
+
+    pub fn draw_flex_border(&mut self, style: &Style, x: u16) {
+        let boundaries = self.calc_onscreen_boundaries(style);
+
+        if style.get_border() != Border::None {
+            self.renderer.borrow_mut().draw_box(Rect {
+                x: boundaries.x,
+                y: boundaries.y,
+                width: boundaries.x + x + 2,
+                height: boundaries.height
+            });
+        } else {
+            self.renderer.borrow_mut().draw_v_line(
+                boundaries.y, 
+                boundaries.y + boundaries.height,
+                boundaries.x + x);
         }
     }
 }
